@@ -3,8 +3,8 @@ package websocket
 import (
 	"net/http"
 
-	"engine.igo/v4/transport"
 	gorilla "github.com/gorilla/websocket"
+	"github.com/taogames/engine.igo/transport"
 )
 
 type Transport struct {

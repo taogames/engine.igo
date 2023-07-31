@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	"engine.igo/v4/transport"
-	"engine.igo/v4/transport/polling"
-	"engine.igo/v4/transport/websocket"
-	id "engine.igo/v4/utils/id"
+	"github.com/taogames/engine.igo/transport"
+	"github.com/taogames/engine.igo/transport/polling"
+	"github.com/taogames/engine.igo/transport/websocket"
+	"github.com/taogames/engine.igo/utils/idgen"
 	"go.uber.org/zap"
 )
 
@@ -25,7 +25,7 @@ type Server struct {
 	sessCh  chan *Session
 	sessMap map[string]*Session
 
-	idGen  id.Generator
+	idGen  idgen.Generator
 	logger *zap.SugaredLogger
 }
 
@@ -65,7 +65,7 @@ func NewServer(opts ...ServerOption) *Server {
 		}),
 		sessMap: make(map[string]*Session),
 		sessCh:  make(chan *Session),
-		idGen:   id.Default,
+		idGen:   idgen.Default,
 	}
 
 	for _, o := range opts {

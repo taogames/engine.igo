@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"engine.igo/v4/message"
-	"engine.igo/v4/transport"
-	"engine.igo/v4/transport/polling"
+	"github.com/taogames/engine.igo/message"
+	"github.com/taogames/engine.igo/transport"
+	"github.com/taogames/engine.igo/transport/polling"
 	"go.uber.org/zap"
 )
 

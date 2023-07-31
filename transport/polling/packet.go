@@ -3,7 +3,7 @@ package polling
 import (
 	"io"
 
-	"engine.igo/v4/message"
+	"github.com/taogames/engine.igo/message"
 )
 
 type packetWriter struct {

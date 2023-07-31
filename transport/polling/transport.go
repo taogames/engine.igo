@@ -3,8 +3,8 @@ package polling
 import (
 	"net/http"
 
-	"engine.igo/v4/message"
-	"engine.igo/v4/transport"
+	"github.com/taogames/engine.igo/message"
+	"github.com/taogames/engine.igo/transport"
 )
 
 type Transport struct {

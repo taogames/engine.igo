@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"engine.igo/v4/message"
+	"github.com/taogames/engine.igo/message"
 )
 
 type serverConn struct {

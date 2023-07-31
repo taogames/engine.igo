@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"engine.igo/v4/message"
 	gorilla "github.com/gorilla/websocket"
+	"github.com/taogames/engine.igo/message"
 )
 
 type Conn struct {

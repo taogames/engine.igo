@@ -1,4 +1,4 @@
-module engine.igo/v4
+module github.com/taogames/engine.igo
 
 go 1.20
 
