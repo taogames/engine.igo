@@ -1,0 +1,1 @@
+Test cases available at https://github.com/socketio/engine.io-protocol
