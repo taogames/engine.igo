@@ -41,6 +41,28 @@ func (r *packetReader) Close() error {
 	return nil
 }
 
-func (r *packetReader) error(err error) {
-	r.errCh <- err
+func (r *packetReader) parse() (message.MessageType, message.PacketType, io.ReadCloser, error) {
+	bs := make([]byte, 1)
+	_, err := r.Read(bs)
+	if err != nil && err != io.EOF {
+		return 0, 0, nil, err
+	}
+	b := bs[0]
+
+	var (
+		mt message.MessageType
+		pt message.PacketType
+	)
+
+	if b == 'b' {
+		mt = message.MTBinary
+	} else {
+		mt = message.MTText
+		pt, err = message.ParsePacketType(b)
+		if err != nil {
+			r.errCh <- err
+			return 0, 0, nil, err
+		}
+	}
+	return mt, pt, r, nil
 }

@@ -11,8 +11,8 @@ type Payload struct {
 	writeCh   chan io.Writer
 	writeDone chan struct{}
 
-	readCh  chan *packetReader
-	readErr chan error
+	readCh    chan *packetReader
+	readErrCh chan error
 
 	pauseCh chan struct{}
 
@@ -24,8 +24,8 @@ func NewPayload() *Payload {
 		writeCh:   make(chan io.Writer),
 		writeDone: make(chan struct{}),
 
-		readCh:  make(chan *packetReader),
-		readErr: make(chan error),
+		readCh:    make(chan *packetReader),
+		readErrCh: make(chan error),
 
 		pauseCh: make(chan struct{}),
 
@@ -99,10 +99,9 @@ func (p *Payload) GetWriter(pt message.PacketType) (io.WriteCloser, error) {
 func (p *Payload) PutReader(r io.Reader) error {
 	p.readCh <- &packetReader{
 		r:     r,
-		errCh: p.readErr,
+		errCh: p.readErrCh,
 	}
-
-	err := <-p.readErr
+	err := <-p.readErrCh
 	return err
 }
 
@@ -117,28 +116,6 @@ func (p *Payload) GetReader() (message.MessageType, message.PacketType, io.ReadC
 	case <-p.pauseCh:
 		return 0, 0, nil, ErrUpgrade
 	case r := <-p.readCh:
-		bs := make([]byte, 1)
-		_, err := r.Read(bs)
-		if err != nil && err != io.EOF {
-			return 0, 0, nil, err
-		}
-		b := bs[0]
-
-		var (
-			mt message.MessageType
-			pt message.PacketType
-		)
-
-		if b == 'b' {
-			mt = message.MTBinary
-		} else {
-			mt = message.MTText
-			pt, err = message.ParsePacketType(b)
-			if err != nil {
-				r.error(err)
-				return 0, 0, nil, err
-			}
-		}
-		return mt, pt, r, nil
+		return r.parse()
 	}
 }

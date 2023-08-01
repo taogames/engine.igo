@@ -70,9 +70,10 @@ func (s *Session) Init() {
 func (s *Session) NextWriter(mt message.MessageType, pt message.PacketType) (io.WriteCloser, error) {
 	for {
 		s.upgradeLock.Lock()
-		w, err := s.conn.NextWriter(mt, pt)
+		conn := s.conn
 		s.upgradeLock.Unlock()
 
+		w, err := conn.NextWriter(mt, pt)
 		if err != nil {
 			if errors.Is(err, polling.ErrUpgrade) {
 				s.logger.Debug("NextWriter ErrUpgrade")
@@ -98,9 +99,10 @@ func (s *Session) WriteMessage(bs []byte) error {
 func (s *Session) NextReader() (message.MessageType, message.PacketType, io.ReadCloser, error) {
 	for {
 		s.upgradeLock.Lock()
-		mt, pt, rc, err := s.conn.NextReader()
+		conn := s.conn
 		s.upgradeLock.Unlock()
 
+		mt, pt, rc, err := conn.NextReader()
 		if err != nil {
 			if errors.Is(err, polling.ErrUpgrade) {
 				s.logger.Debug("NextReader ErrUpgrade")
@@ -120,6 +122,7 @@ func (s *Session) NextReader() (message.MessageType, message.PacketType, io.Read
 			rc.Close()
 			continue
 		}
+
 		return mt, pt, rc, nil
 	}
 }
@@ -128,12 +131,9 @@ func (s *Session) Upgrade(w http.ResponseWriter, r *http.Request, reqTransport t
 	// stop heartbeat
 	close(s.closeCh)
 
-	// pause
+	// conn
 	oldConn := s.conn
-	oldConn.Pause()
-
 	s.upgradeLock.Lock()
-
 	newConn, err := reqTransport.Accept(w, r)
 	if err != nil {
 		return err
@@ -164,6 +164,9 @@ func (s *Session) Upgrade(w http.ResponseWriter, r *http.Request, reqTransport t
 	}
 	wc.Close()
 
+	// pause old
+	oldConn.Pause()
+
 	// wait for upgrade
 	s.logger.Debug("[UPGRADE] 3", time.Now().UnixMilli())
 	mt, pt, rc, err = newConn.NextReader()
@@ -175,8 +178,9 @@ func (s *Session) Upgrade(w http.ResponseWriter, r *http.Request, reqTransport t
 	}
 	rc.Close()
 
-	s.conn = newConn
+	// replace conn
 	s.logger.Debug("[UPGRADE] 4", time.Now().UnixMilli())
+	s.conn = newConn
 	s.closeCh = make(chan struct{})
 	s.upgradeLock.Unlock()
 	go oldConn.Close(false)
