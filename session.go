@@ -85,12 +85,12 @@ func (s *Session) NextWriter(mt message.MessageType, pt message.PacketType) (io.
 	}
 }
 
-func (s *Session) WriteMessage(bs []byte) error {
-	w, err := s.conn.NextWriter(message.MTText, message.PTMessage)
+func (s *Session) WriteMessage(msg *message.Message) error {
+	w, err := s.conn.NextWriter(msg.Type, message.PTMessage)
 	if err != nil {
 		return err
 	}
-	if _, err := w.Write(bs); err != nil {
+	if _, err := w.Write(msg.Data); err != nil {
 		return err
 	}
 	return w.Close()

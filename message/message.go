@@ -4,6 +4,11 @@ import "fmt"
 
 type MessageType int
 
+type Message struct {
+	Type MessageType
+	Data []byte
+}
+
 // Same as gorilla Message.
 // RFC 6455, section 11.8
 const (
