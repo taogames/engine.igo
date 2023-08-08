@@ -7,6 +7,7 @@ import (
 	"time"
 
 	engineigo "github.com/taogames/engine.igo"
+	"github.com/taogames/engine.igo/message"
 )
 
 func main() {
@@ -41,18 +42,10 @@ func main() {
 
 					fmt.Println("【Main】NextReader content", string(bs))
 
-					w, err := sess.NextWriter(mt, pt)
-					if err != nil {
-						fmt.Println("【Main】NextWriter err ", err.Error())
+					if err := sess.WriteMessage(&message.Message{Type: mt, Data: bs}); err != nil {
+						fmt.Println("【Main】WriteMessage err ", err.Error())
 						return
 					}
-
-					_, err = w.Write(bs)
-					if err != nil {
-						fmt.Println("【Main】Write err ", err.Error())
-						return
-					}
-					w.Close()
 				}
 			}()
 		}

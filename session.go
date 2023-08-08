@@ -67,7 +67,7 @@ func (s *Session) Init() {
 	s.logger.Debug("Init Write ", string(j))
 }
 
-func (s *Session) NextWriter(mt message.MessageType, pt message.PacketType) (io.WriteCloser, error) {
+func (s *Session) nextWriter(mt message.MessageType, pt message.PacketType) (io.WriteCloser, error) {
 	for {
 		s.upgradeLock.Lock()
 		conn := s.conn
@@ -86,7 +86,7 @@ func (s *Session) NextWriter(mt message.MessageType, pt message.PacketType) (io.
 }
 
 func (s *Session) WriteMessage(msg *message.Message) error {
-	w, err := s.conn.NextWriter(msg.Type, message.PTMessage)
+	w, err := s.nextWriter(msg.Type, message.PTMessage)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func (s *Session) WriteMessage(msg *message.Message) error {
 	return w.Close()
 }
 
-func (s *Session) NextReader() (message.MessageType, message.PacketType, io.ReadCloser, error) {
+func (s *Session) nextReader() (message.MessageType, message.PacketType, io.ReadCloser, error) {
 	for {
 		s.upgradeLock.Lock()
 		conn := s.conn
@@ -125,6 +125,21 @@ func (s *Session) NextReader() (message.MessageType, message.PacketType, io.Read
 
 		return mt, pt, rc, nil
 	}
+}
+
+func (s *Session) ReadMessage() (message.MessageType, []byte, error) {
+	mt, _, r, err := s.nextReader()
+	if err != nil {
+		return mt, nil, err
+	}
+
+	defer r.Close()
+	bs, err := io.ReadAll(r)
+	if err != nil {
+		return mt, nil, err
+	}
+
+	return mt, bs, err
 }
 
 func (s *Session) Upgrade(w http.ResponseWriter, r *http.Request, reqTransport transport.Transport) error {
