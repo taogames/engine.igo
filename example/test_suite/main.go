@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -26,21 +25,12 @@ func main() {
 
 			go func() {
 				for {
-					mt, pt, r, err := sess.NextReader()
+					mt, bs, err := sess.ReadMessage()
 					if err != nil {
-						fmt.Println("【Main】NextReader err ", err.Error())
+						fmt.Println("【Main】ReadMessage err ", err.Error())
 						return
 					}
-					fmt.Println("【Main】NextReader type: ", mt, pt)
-
-					bs, err := io.ReadAll(r)
-					if err != nil {
-						fmt.Println("【Main】ReadAll err ", err.Error())
-						return
-					}
-					r.Close()
-
-					fmt.Println("【Main】NextReader content", string(bs))
+					fmt.Println("【Main】ReadMessage content", string(bs))
 
 					if err := sess.WriteMessage(&message.Message{Type: mt, Data: bs}); err != nil {
 						fmt.Println("【Main】WriteMessage err ", err.Error())
