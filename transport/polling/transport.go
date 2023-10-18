@@ -20,7 +20,13 @@ func (t *Transport) Name() string {
 
 func (t *Transport) Accept(w http.ResponseWriter, r *http.Request) (transport.Conn, error) {
 	conn := &serverConn{
-		payload:    NewPayload(),
+		pollCh:    make(chan http.ResponseWriter, 1),
+		pollErrCh: make(chan error),
+		dataCh:    make(chan []byte, 1),
+		dataErrCh: make(chan error),
+
+		closeCh: make(chan struct{}),
+
 		host:       r.Host,
 		remoteAddr: r.RemoteAddr,
 		pongCh:     make(chan struct{}),

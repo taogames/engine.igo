@@ -1,97 +1,91 @@
 package websocket
 
 import (
-	"io"
+	"fmt"
 	"log"
 	"net/http"
+	"sync"
 
 	gorilla "github.com/gorilla/websocket"
 	"github.com/taogames/engine.igo/message"
+	"go.uber.org/zap"
 )
 
 type Conn struct {
-	*gorilla.Conn
+	logger *zap.SugaredLogger
 
-	errCh chan error
+	sync.Mutex
+	ws *gorilla.Conn
+
+	closeCh chan error
 }
 
 func newConn(c *gorilla.Conn) *Conn {
 	return &Conn{
-		Conn:  c,
-		errCh: make(chan error),
+		ws:      c,
+		closeCh: make(chan error),
 	}
 }
 
 func (c *Conn) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
-	return <-c.errCh
+	fmt.Println("websocket ServeHTTP")
+	return <-c.closeCh
 }
 
-type wrapper struct {
-	w  io.WriteCloser
-	mt message.MessageType
-	pt message.PacketType
+func (c *Conn) TryWrite(mt message.MessageType, pt message.PacketType, data []byte) {
+	c.Write(mt, pt, data)
 }
 
-func (w *wrapper) Write(bs []byte) (int, error) {
-	var n int
-	if w.mt == message.MTText {
-		n1, err := w.w.Write(w.pt.Bytes())
-		n += n1
-		if err != nil {
-			return n1, err
-		}
-	}
-
-	n2, err := w.w.Write(bs)
-	n += n2
-	return n, err
-}
-
-func (w *wrapper) Close() error {
-	return w.w.Close()
-}
-
-func (c *Conn) NextReader() (message.MessageType, message.PacketType, io.ReadCloser, error) {
-	mti, r, err := c.Conn.NextReader()
+func (c *Conn) Read() (message.MessageType, message.PacketType, []byte, error) {
+	mti, bs, err := c.ws.ReadMessage()
 	if err != nil {
 		return 0, 0, nil, err
 	}
-
 	mt := message.MessageType(mti)
 	var pt message.PacketType
 
-	switch mt {
-	case message.MTText:
-		bs := make([]byte, 1)
-		_, err := r.Read(bs)
-		if err != nil {
-			return 0, 0, nil, err
-		}
+	if mt == message.MTText {
 		pt, err = message.ParsePacketType(bs[0])
 		if err != nil {
-			c.errCh <- err
+			c.Close(true)
 			return 0, 0, nil, err
 		}
-	case message.MTBinary:
+		bs = bs[1:]
 	}
 
-	return mt, pt, r.(io.ReadCloser), nil
+	return mt, pt, bs, nil
 }
 
-func (c *Conn) NextWriter(mt message.MessageType, pt message.PacketType) (io.WriteCloser, error) {
-	w, err := c.Conn.NextWriter(int(mt))
-	return &wrapper{
-		w:  w,
-		mt: mt,
-		pt: pt,
-	}, err
+func (c *Conn) Write(mt message.MessageType, pt message.PacketType, data []byte) error {
+	var msg []byte
+	if mt == message.MTText {
+		msg = append(msg, pt.Byte())
+	}
+	msg = append(msg, data...)
+
+	c.Lock()
+	defer c.Unlock()
+
+	switch mt {
+	case message.MTText:
+		c.logger.Debug("write: ", string(msg))
+	case message.MTBinary:
+		c.logger.Debug("write: ", msg)
+	}
+
+	return c.ws.WriteMessage(int(mt), msg)
 }
 
 func (c *Conn) Close(bool) error {
-	close(c.errCh)
+	select {
+	case <-c.closeCh:
+		return nil
 
-	c.Conn.WriteMessage(gorilla.CloseMessage, nil)
-	return c.Conn.Close()
+	default:
+		close(c.closeCh)
+		c.ws.WriteMessage(gorilla.CloseMessage, nil)
+		return c.ws.Close()
+	}
 }
 
 func (c *Conn) Name() string {
@@ -100,4 +94,8 @@ func (c *Conn) Name() string {
 
 func (c *Conn) Pause() {
 	log.Fatal("Websocket should never be paused")
+}
+
+func (c *Conn) WithLogger(logger *zap.SugaredLogger) {
+	c.logger = logger
 }

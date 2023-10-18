@@ -3,14 +3,13 @@ package engineigo
 import (
 	"encoding/json"
 	"errors"
-	"io"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/taogames/engine.igo/message"
 	"github.com/taogames/engine.igo/transport"
-	"github.com/taogames/engine.igo/transport/polling"
 	"go.uber.org/zap"
 )
 
@@ -46,100 +45,99 @@ func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Session) Init() {
-	w, err := s.conn.NextWriter(message.MTText, message.PTOpen)
-	defer func() {
-		if err := w.Close(); err != nil {
-			s.logger.Error("Init Close error: ", err)
-		}
-	}()
-	if err != nil {
-		s.logger.Error("Init NextWriter error: ", err)
-		return
-	}
-
 	s.conf.Sid = s.id
 	j, _ := json.Marshal(s.conf)
 
-	_, err = w.Write(j)
+	err := s.conn.Write(message.MTText, message.PTOpen, j)
 	if err != nil {
-		s.logger.Errorf("Init Write %v error", string(j))
+		s.logger.Errorf("Init Write %v error: %v", string(j), err)
+		return
 	}
-	s.logger.Debug("Init Write ", string(j))
+	s.logger.Debug("Init Wrote ", string(j))
 }
 
-func (s *Session) nextWriter(mt message.MessageType, pt message.PacketType) (io.WriteCloser, error) {
-	for {
-		s.upgradeLock.Lock()
-		conn := s.conn
-		s.upgradeLock.Unlock()
+// func (s *Session) nextWriter(mt message.MessageType, pt message.PacketType) (io.WriteCloser, error) {
+// 	for {
+// 		s.upgradeLock.Lock()
+// 		conn := s.conn
+// 		s.upgradeLock.Unlock()
 
-		w, err := conn.NextWriter(mt, pt)
-		if err != nil {
-			if errors.Is(err, polling.ErrUpgrade) {
-				s.logger.Debug("NextWriter ErrUpgrade")
-				continue
-			}
-			return nil, errors.Join(err, ErrTransportError)
-		}
-		return w, nil
-	}
-}
+// 		w, err := conn.NextWriter(mt, pt)
+// 		if err != nil {
+// 			if errors.Is(err, polling.ErrUpgrade) {
+// 				s.logger.Debug("NextWriter ErrUpgrade")
+// 				continue
+// 			}
+// 			return nil, errors.Join(err, ErrTransportError)
+// 		}
+// 		return w, nil
+// 	}
+// }
 
 func (s *Session) WriteMessage(msg *message.Message) error {
-	w, err := s.nextWriter(msg.Type, message.PTMessage)
-	if err != nil {
-		return err
-	}
-	if _, err := w.Write(msg.Data); err != nil {
-		return err
-	}
-	return w.Close()
+	return s.conn.Write(msg.Type, message.PTMessage, msg.Data)
 }
 
-func (s *Session) nextReader() (message.MessageType, message.PacketType, io.ReadCloser, error) {
+// func (s *Session) nextReader() (message.MessageType, message.PacketType, io.ReadCloser, error) {
+// 	for {
+// 		s.upgradeLock.Lock()
+// 		conn := s.conn
+// 		s.upgradeLock.Unlock()
+
+// 		mt, pt, rc, err := conn.NextReader()
+// 		if err != nil {
+// 			if errors.Is(err, polling.ErrUpgrade) {
+// 				s.logger.Debug("NextReader ErrUpgrade")
+// 				continue
+// 			}
+// 			return 0, 0, nil, errors.Join(err, ErrTransportError)
+// 		}
+
+// 		switch pt {
+// 		case message.PTPong:
+// 			s.pongCh <- struct{}{}
+// 			rc.Close()
+// 			continue
+// 		case message.PTClose:
+// 			s.clientClose = true
+// 			s.Close()
+// 			rc.Close()
+// 			continue
+// 		}
+
+// 		return mt, pt, rc, nil
+// 	}
+// }
+
+func (s *Session) ReadMessage() (message.MessageType, []byte, error) {
+	retry := true
+
 	for {
 		s.upgradeLock.Lock()
 		conn := s.conn
 		s.upgradeLock.Unlock()
 
-		mt, pt, rc, err := conn.NextReader()
+		mt, pt, bs, err := conn.Read()
 		if err != nil {
-			if errors.Is(err, polling.ErrUpgrade) {
-				s.logger.Debug("NextReader ErrUpgrade")
+			if err == transport.ErrClosed && retry {
+				fmt.Println("RETRY: ", err)
+				retry = false
 				continue
 			}
-			return 0, 0, nil, errors.Join(err, ErrTransportError)
+			return mt, nil, err
 		}
 
 		switch pt {
 		case message.PTPong:
 			s.pongCh <- struct{}{}
-			rc.Close()
 			continue
 		case message.PTClose:
 			s.clientClose = true
 			s.Close()
-			rc.Close()
 			continue
 		}
-
-		return mt, pt, rc, nil
+		return mt, bs, err
 	}
-}
-
-func (s *Session) ReadMessage() (message.MessageType, []byte, error) {
-	mt, _, r, err := s.nextReader()
-	if err != nil {
-		return mt, nil, err
-	}
-
-	defer r.Close()
-	bs, err := io.ReadAll(r)
-	if err != nil {
-		return mt, nil, err
-	}
-
-	return mt, bs, err
 }
 
 func (s *Session) Upgrade(w http.ResponseWriter, r *http.Request, reqTransport transport.Transport) error {
@@ -148,15 +146,15 @@ func (s *Session) Upgrade(w http.ResponseWriter, r *http.Request, reqTransport t
 
 	// conn
 	oldConn := s.conn
-	s.upgradeLock.Lock()
 	newConn, err := reqTransport.Accept(w, r)
 	if err != nil {
 		return err
 	}
+	newConn.WithLogger(s.logger)
 
 	// wait for ping
-	s.logger.Debug("[UPGRADE] 1", time.Now().UnixMilli())
-	mt, pt, rc, err := newConn.NextReader()
+	s.logger.Debug("[UPGRADE] 1 ", time.Now().UnixMilli())
+	mt, pt, bs, err := newConn.Read()
 	if err != nil {
 		return err
 	}
@@ -165,43 +163,50 @@ func (s *Session) Upgrade(w http.ResponseWriter, r *http.Request, reqTransport t
 	}
 
 	// send pong
-	s.logger.Debug("[UPGRADE] 2", time.Now().UnixMilli())
-	wc, err := newConn.NextWriter(message.MTText, message.PTPong)
-	if err != nil {
+	s.logger.Debug("[UPGRADE] 2 ", time.Now().UnixMilli())
+	if err := newConn.Write(message.MTText, message.PTPong, bs); err != nil {
 		return err
 	}
-	bs, err := io.ReadAll(rc)
-	if err != nil {
-		return err
-	}
-	if _, err := wc.Write(bs); err != nil {
-		return err
-	}
-	wc.Close()
 
 	// pause old
-	oldConn.Pause()
+
+	noopCh := make(chan struct{})
+	noopTicker := time.NewTicker(time.Second)
+
+	go func() {
+		for {
+			select {
+			case <-noopCh:
+				return
+			case <-noopTicker.C:
+				oldConn.TryWrite(message.MTText, message.PTNoop, nil)
+			}
+		}
+	}()
 
 	// wait for upgrade
-	s.logger.Debug("[UPGRADE] 3", time.Now().UnixMilli())
-	mt, pt, rc, err = newConn.NextReader()
+	s.logger.Debug("[UPGRADE] 3 ", time.Now().UnixMilli())
+	mt, pt, _, err = newConn.Read()
 	if err != nil {
 		return err
 	}
 	if mt != message.MTText || pt != message.PTUpgrade {
 		return errors.New("upgrade rcv upgrade error")
 	}
-	rc.Close()
 
 	// replace conn
-	s.logger.Debug("[UPGRADE] 4", time.Now().UnixMilli())
+	s.logger.Debug("[UPGRADE] 4 ", time.Now().UnixMilli())
+
+	s.upgradeLock.Lock()
 	s.conn = newConn
-	s.closeCh = make(chan struct{})
 	s.upgradeLock.Unlock()
+
+	close(noopCh)
+	s.closeCh = make(chan struct{})
 	go oldConn.Close(false)
 
 	// restart heatbeat
-	s.logger.Debug("[UPGRADE] 5", time.Now().UnixMilli())
+	s.logger.Debug("[UPGRADE] 5 ", time.Now().UnixMilli())
 	go s.Ping()
 
 	return nil
@@ -214,9 +219,10 @@ func (s *Session) Transport() string {
 func (s *Session) Close() error {
 	select {
 	case <-s.closeCh:
+		s.logger.Debug("Session already closed")
 		return nil
 	default:
-		s.logger.Debug("Session close", s.clientClose)
+		s.logger.Debugf("Session close, noop=%v", s.clientClose)
 		s.server.removeSession(s)
 		close(s.closeCh)
 		s.conn.Close(s.clientClose)
@@ -268,12 +274,10 @@ func (s *Session) ping() {
 
 	s.logger.Debug("[Ping]")
 	go func() {
-		w, err := s.conn.NextWriter(message.MTText, message.PTPing)
-		if err != nil {
+		if err := s.conn.Write(message.MTText, message.PTPing, nil); err != nil {
+			s.logger.Debug("[Ping] error: ", err)
 			return
 		}
-		w.Write(nil)
-		w.Close()
 	}()
 
 	select {

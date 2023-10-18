@@ -1,10 +1,10 @@
 package transport
 
 import (
-	"io"
 	"net/http"
 
 	"github.com/taogames/engine.igo/message"
+	"go.uber.org/zap"
 )
 
 type Conn interface {
@@ -13,8 +13,12 @@ type Conn interface {
 	Close(noop bool) error
 	Pause()
 
-	NextReader() (message.MessageType, message.PacketType, io.ReadCloser, error)
-	NextWriter(mt message.MessageType, pt message.PacketType) (io.WriteCloser, error)
+	Read() (message.MessageType, message.PacketType, []byte, error)
+	Write(mt message.MessageType, pt message.PacketType, data []byte) error
+
+	TryWrite(mt message.MessageType, pt message.PacketType, data []byte)
+
+	WithLogger(logger *zap.SugaredLogger)
 }
 
 type Transport interface {

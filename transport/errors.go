@@ -1,6 +1,6 @@
-package polling
+package transport
 
 import "errors"
 
 var ErrUpgrade error = errors.New("Engine.IO transport upgrading")
-var ErrClose error = errors.New("Engine.IO transport closed")
+var ErrClosed error = errors.New("Engine.IO transport closed")

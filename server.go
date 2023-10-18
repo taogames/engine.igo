@@ -128,6 +128,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+
 		var ok bool
 		sess, ok = s.sessMap[sid]
 		if !ok {
@@ -145,20 +146,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, errMsg, http.StatusBadRequest)
 				return
 			}
+
 			if err := sess.Upgrade(w, r, reqTransport); err != nil {
 				s.logger.Errorf("session=%s upgrade: %s", sid, err.Error())
 				http.Error(w, "server error", http.StatusInternalServerError)
 				return
 			}
-		} else if !sess.Unique(r.Method) {
-			// Duplicate
-			errMsg := fmt.Sprintf("session=%v duplicate method=%v", sid, r.Method)
-			s.logger.Error(errMsg)
+		} else if reqTransportName == "websocket" {
+			errMsg := fmt.Sprintf("session=%s duplicate websocket", sid)
 			http.Error(w, errMsg, http.StatusBadRequest)
-			s.closeSession(sess)
 			return
-		} else {
-			defer sess.UnlockMethod(r.Method)
 		}
 	}
 
@@ -201,6 +198,7 @@ func (s *Server) newSession(conn transport.Conn) (*Session, error) {
 		pongCh:  make(chan struct{}),
 		closeCh: make(chan struct{}),
 	}
+	conn.WithLogger(s.logger)
 
 	go func() {
 		sess.Init()

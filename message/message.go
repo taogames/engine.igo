@@ -35,6 +35,10 @@ func (pt PacketType) Bytes() []byte {
 	return []byte{byte(pt) + '0'}
 }
 
+func (pt PacketType) Byte() byte {
+	return byte(pt) + '0'
+}
+
 func ParsePacketType(b byte) (PacketType, error) {
 	pt := PacketType(b - '0')
 	if pt < PTOpen || pt > PTNoop {
