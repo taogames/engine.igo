@@ -119,7 +119,7 @@ func (s *Session) ReadMessage() (message.MessageType, []byte, error) {
 
 		mt, pt, bs, err := conn.Read()
 		if err != nil {
-			if err == transport.ErrClosed && retry {
+			if errors.Is(err, transport.ErrClosed) && retry {
 				fmt.Println("RETRY: ", err)
 				retry = false
 				continue
@@ -222,9 +222,9 @@ func (s *Session) Close() error {
 		s.logger.Debug("Session already closed")
 		return nil
 	default:
+		close(s.closeCh)
 		s.logger.Debugf("Session close, noop=%v", s.clientClose)
 		s.server.removeSession(s)
-		close(s.closeCh)
 		s.conn.Close(s.clientClose)
 		return nil
 	}

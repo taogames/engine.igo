@@ -64,6 +64,8 @@ func (c *serverConn) onDataRequest(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 
+	c.logger.Debug("onDataRequest: ", string(bs))
+
 	select {
 	case c.dataCh <- bs:
 		err := <-c.dataErrCh
@@ -98,7 +100,6 @@ func (c *serverConn) Write(mt message.MessageType, pt message.PacketType, data [
 func (c *serverConn) TryWrite(mt message.MessageType, pt message.PacketType, data []byte) {
 	select {
 	case w := <-c.pollCh:
-		fmt.Println("writing")
 		msg := []byte{pt.Byte()}
 		msg = append(msg, data...)
 
@@ -106,10 +107,8 @@ func (c *serverConn) TryWrite(mt message.MessageType, pt message.PacketType, dat
 		c.pollErrCh <- err
 
 	case <-c.closeCh:
-		fmt.Println("close")
 		fmt.Println(transport.ErrClosed)
 	default:
-		fmt.Println("return")
 		return
 	}
 }

@@ -1,13 +1,14 @@
 package websocket
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"sync"
 
 	gorilla "github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 	"github.com/taogames/engine.igo/message"
+	"github.com/taogames/engine.igo/transport"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +29,6 @@ func newConn(c *gorilla.Conn) *Conn {
 }
 
 func (c *Conn) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
-	fmt.Println("websocket ServeHTTP")
 	return <-c.closeCh
 }
 
@@ -39,6 +39,9 @@ func (c *Conn) TryWrite(mt message.MessageType, pt message.PacketType, data []by
 func (c *Conn) Read() (message.MessageType, message.PacketType, []byte, error) {
 	mti, bs, err := c.ws.ReadMessage()
 	if err != nil {
+		if _, ok := err.(*gorilla.CloseError); ok {
+			err = errors.Wrap(transport.ErrClosed, err.Error())
+		}
 		return 0, 0, nil, err
 	}
 	mt := message.MessageType(mti)

@@ -3,6 +3,7 @@ package engineigo
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/taogames/engine.igo/transport"
@@ -23,7 +24,7 @@ type Server struct {
 	transports   *transport.Manager
 
 	sessCh  chan *Session
-	sessMap map[string]*Session
+	sessMap sync.Map // map[string]*Session
 
 	idGen  idgen.Generator
 	logger *zap.SugaredLogger
@@ -63,9 +64,8 @@ func NewServer(opts ...ServerOption) *Server {
 			polling.Default,
 			websocket.Default,
 		}),
-		sessMap: make(map[string]*Session),
-		sessCh:  make(chan *Session),
-		idGen:   idgen.Default,
+		sessCh: make(chan *Session),
+		idGen:  idgen.Default,
 	}
 
 	for _, o := range opts {
@@ -128,15 +128,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-
-		var ok bool
-		sess, ok = s.sessMap[sid]
+		raw, ok := s.sessMap.Load(sid)
 		if !ok {
 			errMsg := fmt.Sprintf("session=%v not exist", sid)
 			s.logger.Error(errMsg)
 			http.Error(w, errMsg, http.StatusBadRequest)
 			return
 		}
+
+		sess = raw.(*Session)
 
 		// Upgrade
 		if reqTransportName != sess.Transport() {
@@ -149,7 +149,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			if err := sess.Upgrade(w, r, reqTransport); err != nil {
 				s.logger.Errorf("session=%s upgrade: %s", sid, err.Error())
-				http.Error(w, "server error", http.StatusInternalServerError)
 				return
 			}
 		} else if reqTransportName == "websocket" {
@@ -203,7 +202,7 @@ func (s *Server) newSession(conn transport.Conn) (*Session, error) {
 	go func() {
 		sess.Init()
 
-		s.sessMap[sid] = sess
+		s.sessMap.Store(sid, sess)
 		s.sessCh <- sess
 
 		go sess.Ping()
@@ -213,10 +212,10 @@ func (s *Server) newSession(conn transport.Conn) (*Session, error) {
 }
 
 func (s *Server) closeSession(sess *Session) {
-	delete(s.sessMap, sess.id)
+	s.sessMap.Delete(sess.id)
 	sess.Close()
 }
 
 func (s *Server) removeSession(sess *Session) {
-	delete(s.sessMap, sess.id)
+	s.sessMap.Delete(sess.id)
 }
