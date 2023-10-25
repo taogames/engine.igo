@@ -25,6 +25,7 @@ func (t *Transport) Accept(w http.ResponseWriter, r *http.Request) (transport.Co
 		dataCh:    make(chan []byte, 1),
 		dataErrCh: make(chan error),
 
+		pauseCh: make(chan struct{}),
 		closeCh: make(chan struct{}),
 
 		host:       r.Host,

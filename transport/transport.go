@@ -16,8 +16,6 @@ type Conn interface {
 	Read() (message.MessageType, message.PacketType, []byte, error)
 	Write(mt message.MessageType, pt message.PacketType, data []byte) error
 
-	TryWrite(mt message.MessageType, pt message.PacketType, data []byte)
-
 	WithLogger(logger *zap.SugaredLogger)
 }
 

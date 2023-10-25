@@ -32,10 +32,6 @@ func (c *Conn) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return <-c.closeCh
 }
 
-func (c *Conn) TryWrite(mt message.MessageType, pt message.PacketType, data []byte) {
-	c.Write(mt, pt, data)
-}
-
 func (c *Conn) Read() (message.MessageType, message.PacketType, []byte, error) {
 	mti, bs, err := c.ws.ReadMessage()
 	if err != nil {

@@ -19,6 +19,7 @@ type serverConn struct {
 	dataCh    chan []byte
 	dataErrCh chan error
 
+	pauseCh chan struct{}
 	closeCh chan struct{}
 
 	host       string
@@ -43,6 +44,19 @@ func (c *serverConn) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 
 func (c *serverConn) onPollRequest(w http.ResponseWriter) error {
 	c.logger.Debug("onPollRequest")
+
+	select {
+	case <-c.pauseCh:
+		c.logger.Debug("c.pauseCh")
+		_, err := w.Write(message.PTNoop.Bytes())
+		return err
+
+	case <-c.closeCh:
+		return transport.ErrClosed
+	default:
+		// pass
+	}
+
 	select {
 	case c.pollCh <- w:
 		err := <-c.pollErrCh
@@ -50,6 +64,15 @@ func (c *serverConn) onPollRequest(w http.ResponseWriter) error {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return err
+
+	case <-c.pauseCh:
+		c.logger.Debug("c.pauseCh")
+		_, err := w.Write(message.PTNoop.Bytes())
+		return err
+
+	case <-c.closeCh:
+		return transport.ErrClosed
+
 	default:
 		err := errors.New("duplicate get")
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -84,6 +107,13 @@ func (c *serverConn) onDataRequest(w http.ResponseWriter, r *http.Request) error
 
 func (c *serverConn) Write(mt message.MessageType, pt message.PacketType, data []byte) error {
 	select {
+	case <-c.closeCh:
+		return transport.ErrClosed
+	default:
+		// pass
+	}
+
+	select {
 	case w := <-c.pollCh:
 		msg := []byte{pt.Byte()}
 		msg = append(msg, data...)
@@ -94,22 +124,6 @@ func (c *serverConn) Write(mt message.MessageType, pt message.PacketType, data [
 
 	case <-c.closeCh:
 		return transport.ErrClosed
-	}
-}
-
-func (c *serverConn) TryWrite(mt message.MessageType, pt message.PacketType, data []byte) {
-	select {
-	case w := <-c.pollCh:
-		msg := []byte{pt.Byte()}
-		msg = append(msg, data...)
-
-		_, err := w.Write(msg)
-		c.pollErrCh <- err
-
-	case <-c.closeCh:
-		fmt.Println(transport.ErrClosed)
-	default:
-		return
 	}
 }
 
@@ -149,6 +163,7 @@ func (c *serverConn) Close(noop bool) error {
 		// already closed
 	default:
 		close(c.closeCh)
+		c.pauseCh = make(chan struct{})
 	}
 
 	select {
@@ -175,7 +190,12 @@ func (c *serverConn) Name() string {
 }
 
 func (c *serverConn) Pause() {
-	// close(c.pauseCh)
+	select {
+	case <-c.pauseCh:
+		// already paused
+	default:
+		close(c.pauseCh)
+	}
 }
 
 func (c *serverConn) WithLogger(logger *zap.SugaredLogger) {
